@@ -26,6 +26,10 @@ int main(int argc, char *argv[]) {
   uint64_t max_len = 0;
   uint64_t gc_counter = 0;
 
+  const int PHRED_MAGIC_NUM = 33;
+  uint64_t q_sum = 0;
+  uint64_t long_reads_sum = 0;
+
   while (std::getline(fastq_file, line)) {
     std::string sequence;
     if (std::getline(fastq_file, sequence)) {
@@ -34,16 +38,26 @@ int main(int argc, char *argv[]) {
       total_reads++;
       total_len += current_len;
 
+      // min & max
       if (current_len < min_len)
         min_len = current_len;
       if (current_len > max_len)
         max_len = current_len;
 
+      // gc-quality
       gc_counter += std::count_if(sequence.begin(), sequence.end(),
                                   [](char c) { return c == 'G' || c == 'C'; });
 
+      // ignore comment
       fastq_file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-      fastq_file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+
+      // basecall qualities
+      std::string basecall_qualities;
+      std::getline(fastq_file, basecall_qualities);
+      if (basecall_qualities.size() >= 10) {
+        q_sum += (basecall_qualities[9] - PHRED_MAGIC_NUM);
+        ++long_reads_sum;
+      }
     }
   }
 
@@ -54,16 +68,20 @@ int main(int argc, char *argv[]) {
     return 0;
   }
 
-  long long average_len =
+  // final count of stats
+  uint64_t average_len =
       std::round(static_cast<double>(total_len) / total_reads);
+  uint64_t gc_content = (static_cast<double>(gc_counter) * 100) / total_len;
+  uint64_t phred_quality =
+      std::round(static_cast<double>(q_sum) / long_reads_sum);
 
   std::cout << "stats:\n";
   std::cout << "total reads: " << total_reads << '\n';
   std::cout << "minimal length of read: " << min_len << '\n';
   std::cout << "average length of read: " << average_len << '\n';
   std::cout << "maximal length of read: " << max_len << '\n';
-  std::cout << "GC-content: "
-            << (static_cast<double>(gc_counter) * 100) / total_len << '\n';
+  std::cout << "GC-content: " << gc_content << '\n';
+  std::cout << "phred quality: " << phred_quality << '\n';
 
   return 0;
 }
