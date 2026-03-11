@@ -39,3 +39,10 @@
 
 # debug information files
 *.dwo
+
+#test files
+*.fastq
+
+#mac special
+*.DS_store
+

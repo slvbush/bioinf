@@ -7,6 +7,8 @@
 #include <limits>
 #include <string>
 
+#include "window_trimmer.h"
+
 int main(int argc, char *argv[]) {
   if (argc < 2) {
     std::cerr << "usage: " << argv[0] << " <fastq format file path>\n";
@@ -20,29 +22,39 @@ int main(int argc, char *argv[]) {
   }
 
   std::string line;
+
   uint64_t total_reads = 0;
   uint64_t total_len = 0;
   uint64_t min_len = std::numeric_limits<uint64_t>::max();
   uint64_t max_len = 0;
   uint64_t gc_counter = 0;
 
-  const int PHRED_MAGIC_NUM = 33;
-  uint64_t q_sum = 0;
-  uint64_t long_reads_sum = 0;
+  const uint8_t PHRED_ASCII_BASE = 33;
+  const uint8_t PHRED_IDX = 9;
+  uint64_t qual_sum = 0;
+  uint64_t long_reads_ctr = 0;
+
+  uint64_t trimmed_counter = 0;
+
+  uint64_t total_reads_left = 0;
+  uint64_t total_len_left = 0;
+  uint64_t min_len_left = std::numeric_limits<uint64_t>::max();
+  uint64_t max_len_left = 0;
+
+  uint64_t long_counter = 0;
 
   while (std::getline(fastq_file, line)) {
     std::string sequence;
     if (std::getline(fastq_file, sequence)) {
-      uint64_t current_len = sequence.length();
+      uint64_t curr_len = sequence.length();
 
-      total_reads++;
-      total_len += current_len;
+      // avg
+      ++total_reads;
+      total_len += curr_len;
 
       // min & max
-      if (current_len < min_len)
-        min_len = current_len;
-      if (current_len > max_len)
-        max_len = current_len;
+      min_len = std::min(min_len, curr_len);
+      max_len = std::max(max_len, curr_len);
 
       // gc-quality
       gc_counter += std::count_if(sequence.begin(), sequence.end(),
@@ -54,9 +66,26 @@ int main(int argc, char *argv[]) {
       // basecall qualities
       std::string basecall_qualities;
       std::getline(fastq_file, basecall_qualities);
-      if (basecall_qualities.size() >= 10) {
-        q_sum += (basecall_qualities[9] - PHRED_MAGIC_NUM);
-        ++long_reads_sum;
+
+      // phred quality on position 10
+      if (basecall_qualities.size() > PHRED_IDX) {
+        qual_sum += (basecall_qualities[PHRED_IDX] - PHRED_ASCII_BASE);
+        ++long_reads_ctr;
+      }
+
+      // window trimming + length trimming after
+      uint64_t tr_idx =
+          window_trimmer::find_trimmed_index(basecall_qualities.substr(), 5);
+      if (tr_idx == 0) {
+        ++trimmed_counter;
+      } else {
+        min_len_left = std::min(min_len_left, tr_idx);
+        max_len_left = std::max(max_len_left, tr_idx);
+        total_reads_left++;
+        total_len_left += tr_idx;
+        if (tr_idx >= 60) {
+          ++long_counter;
+        }
       }
     }
   }
@@ -69,19 +98,39 @@ int main(int argc, char *argv[]) {
   }
 
   // final count of stats
-  uint64_t average_len =
-      std::round(static_cast<double>(total_len) / total_reads);
-  uint64_t gc_content = (static_cast<double>(gc_counter) * 100) / total_len;
+  uint64_t avg_len = std::round(static_cast<double>(total_len) / total_reads);
+  double gc_content = static_cast<double>(gc_counter * 100) / total_len;
   uint64_t phred_quality =
-      std::round(static_cast<double>(q_sum) / long_reads_sum);
+      std::round(static_cast<double>(qual_sum) / long_reads_ctr);
+  uint64_t avg_len_after_trimming =
+      std::round(static_cast<double>(total_len_left) / total_reads_left);
 
-  std::cout << "stats:\n";
+  // outputs
+  std::cout << "STATS:\n";
+
   std::cout << "total reads: " << total_reads << '\n';
   std::cout << "minimal length of read: " << min_len << '\n';
-  std::cout << "average length of read: " << average_len << '\n';
   std::cout << "maximal length of read: " << max_len << '\n';
+  std::cout << "average length of read: " << avg_len << '\n';
+
+  std::cout << '\n';
+
   std::cout << "GC-content: " << gc_content << '\n';
   std::cout << "phred quality: " << phred_quality << '\n';
 
+  std::cout << '\n';
+
+  std::cout << "trimmed with window: " << trimmed_counter << '\n';
+  std::cout << "minimal length of read left after trimming: " << min_len_left
+            << '\n';
+  std::cout << "maximal length of read left after trimming: " << max_len_left
+            << '\n';
+  std::cout << "average length of read left after trimming: "
+            << avg_len_after_trimming << '\n';
+
+  std::cout << '\n';
+
+  std::cout << "amount of reads left after second trimming with length 60: "
+            << long_counter << '\n';
   return 0;
 }
