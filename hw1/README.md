@@ -1,1 +1,4 @@
-simple FASTQ parser (poor exception safety etc)
+> WIP
+
+# About
+Simple FASTQ parser (poor exception safety etc).

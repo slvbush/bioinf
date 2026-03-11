@@ -10,19 +10,20 @@
 #include "window_trimmer.h"
 
 int main(int argc, char *argv[]) {
+  // usage check
   if (argc < 2) {
     std::cerr << "usage: " << argv[0] << " <fastq format file path>\n";
     return 1;
   }
 
+  // open file, check
   std::ifstream fastq_file(argv[1]);
   if (!fastq_file.is_open()) {
     std::cerr << "could not open file " << argv[1] << '\n';
     return 1;
   }
 
-  std::string line;
-
+  // all the variables for statistics
   uint64_t total_reads = 0;
   uint64_t total_len = 0;
   uint64_t min_len = std::numeric_limits<uint64_t>::max();
@@ -43,13 +44,16 @@ int main(int argc, char *argv[]) {
 
   uint64_t long_counter = 0;
 
+  // read 1st string - name
+  std::string line;
   while (std::getline(fastq_file, line)) {
+    // read 2nd string - read
     std::string sequence;
     if (std::getline(fastq_file, sequence)) {
-      uint64_t curr_len = sequence.length();
 
       // avg
       ++total_reads;
+      uint64_t curr_len = sequence.length();
       total_len += curr_len;
 
       // min & max
@@ -60,10 +64,10 @@ int main(int argc, char *argv[]) {
       gc_counter += std::count_if(sequence.begin(), sequence.end(),
                                   [](char c) { return c == 'G' || c == 'C'; });
 
-      // ignore comment
+      // ignore 3d string - comment
       fastq_file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
-      // basecall qualities
+      // read 4th string - basecall qualities
       std::string basecall_qualities;
       std::getline(fastq_file, basecall_qualities);
 
@@ -73,9 +77,9 @@ int main(int argc, char *argv[]) {
         ++long_reads_ctr;
       }
 
-      // window trimming + length trimming after
-      uint64_t tr_idx =
-          window_trimmer::find_trimmed_index(basecall_qualities.substr(), 5);
+      // window trimming + stats & length trimming after
+      uint64_t tr_idx = window_trimmer::find_trimmed_index(
+          basecall_qualities.substr(), 5, 30);
       if (tr_idx == 0) {
         ++trimmed_counter;
       } else {
@@ -89,8 +93,6 @@ int main(int argc, char *argv[]) {
       }
     }
   }
-
-  fastq_file.close();
 
   if (total_reads == 0) {
     std::cout << "no stats for an empty file, sorry :(\n";
