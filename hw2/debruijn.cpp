@@ -24,6 +24,9 @@ public:
   void add_sequence(const std::string &seq) {
     if (seq.length() <= k)
       return;
+
+    // split each read into overlapping k-mers and create directed edges
+    // between consecutive k-mers
     for (size_t i = 0; i <= seq.length() - (k + 1); ++i) {
       std::string u = seq.substr(i, k);
       std::string v = seq.substr(i + 1, k);
@@ -32,12 +35,14 @@ public:
       bool found = false;
       for (auto &edge : adj[u]) {
         if (edge.target_node == v) {
+          // Repeated observation of the same transition increases coverage.
           edge.coverage += 1.0;
           found = true;
           break;
         }
       }
       if (!found) {
+        // store a new edge only once for each distinct transition
         adj[u].push_back({edge_seq, 1.0, v});
         in_degree[v]++;
       }
@@ -45,6 +50,7 @@ public:
   }
 
   void clean_graph(double min_coverage) {
+    // remove low-support edges and keep in-degree values consistent
     for (auto &[u, edges] : adj) {
       edges.erase(remove_if(edges.begin(), edges.end(),
                             [&](const Edge &e) {
@@ -64,6 +70,10 @@ public:
       simplified = false;
       for (auto it = adj.begin(); it != adj.end(); ++it) {
         std::string u = it->first;
+
+        // merge simple chains: one outgoing edge from u and one
+        // incoming/outgoing edge through v, so the two nodes can be collapsed
+        // into one contig
         if (adj[u].size() == 1) {
           std::string v = adj[u][0].target_node;
           if (u != v && in_degree[v] == 1 && adj.count(v) &&
@@ -71,10 +81,12 @@ public:
             Edge &e1 = adj[u][0];
             Edge &e2 = adj[v][0];
 
+            // extend the sequence by appending only the non-overlapping suffix
             e1.sequence += e2.sequence.substr(k);
             e1.coverage = (e1.coverage + e2.coverage) / 2.0;
             e1.target_node = e2.target_node;
 
+            // remove the merged intermediate node
             adj.erase(v);
             in_degree.erase(v);
             simplified = true;
@@ -93,12 +105,12 @@ public:
     }
     out << "H\tVN:Z:1.0\n";
 
-    // segment info
+    // segment record used to assign stable ids before writing the gfa
     struct Seg {
       int id;
       std::string seq;
       double cov;
-      std::string u, v; // s and t node
+      std::string u, v; // source and target nodes
     };
 
     std::vector<Seg> segments;
@@ -115,10 +127,12 @@ public:
       }
     }
 
+    // write graph segments as gfa S-lines
     for (auto const &s : segments) {
       out << "S\t" << s.id << "\t" << s.seq << "\tKC:i:" << (int)s.cov << "\n";
     }
 
+    // write links between segments that share the same intermediate node
     for (auto const &[node, inc_ids] : incoming) {
       if (outgoing.count(node)) {
         for (int in_id : inc_ids) {
@@ -135,6 +149,8 @@ public:
     std::ofstream out(filename);
     if (!out.is_open())
       return;
+
+    // export each edge sequence as a separate contig-like fasta record
     int count = 0;
     for (auto const &[u, edges] : adj) {
       for (auto const &e : edges) {
@@ -163,8 +179,10 @@ std::vector<std::string> parse_data(const std::string &path) {
       continue;
     if (line[0] == '>' || line[0] == '@') {
       if (getline(f, seq)) {
+        // in fasta/fastq, the sequence line follows the header line
         reads.push_back(seq);
         if (is_fastq) {
+          // skip the '+' line and the quality line
           getline(f, line);
           getline(f, line);
         }
