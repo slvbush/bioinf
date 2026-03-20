@@ -40,9 +40,7 @@
 # debug information files
 *.dwo
 
-#test files
-*.fastq
-
-#mac special
+# mac special
 *.DS_store
+*.pages
 
